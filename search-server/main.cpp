@@ -83,10 +83,7 @@ public:
     template <typename StringContainer>
     explicit SearchServer(const StringContainer& stop_words)
         : stop_words_(MakeUniqueNonEmptyStrings(stop_words)) {
-        if (any_of(stop_words_.begin(), stop_words_.end(), 
-            [](const string& word) {
-                return !IsValidWord(word);
-            })) {
+        if (!all_of(stop_words_.begin(), stop_words_.end(), IsValidWord)) {
                 throw invalid_argument("invalid characters in stop words");
         }
     }
@@ -224,21 +221,13 @@ private:
 
     QueryWord ParseQueryWord(string text) const {
         bool is_minus = false;
-        // Word shouldn't be empty
-        if (!IsValidWord(text)) {
-            throw invalid_argument("invalid query");
-        }
-        for (size_t i = 0; i < text.size(); ++i) {
-            size_t j = i + 1;
-            if (text[i] == '-') {               
-                if (i == text.size() || (text[j] >= '\0' && text[j] < '0')) {
-                    throw invalid_argument("invalid query");
-                }
-            }
-        }       
+        // Word shouldn't be empty           
         if (text[0] == '-') {
             is_minus = true;
             text = text.substr(1);
+        }
+            if (!IsValidWord(text) || text[0] == '-' || text[text.size() - 1] == '-' || text.empty()) {
+            throw invalid_argument("invalid query");
         }
         return { text, is_minus, IsStopWord(text) };
     }
