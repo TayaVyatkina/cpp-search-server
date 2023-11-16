@@ -4,6 +4,7 @@
 #include <map>
 #include <numeric>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -84,7 +85,7 @@ public:
     explicit SearchServer(const StringContainer& stop_words)
         : stop_words_(MakeUniqueNonEmptyStrings(stop_words)) {
         if (!all_of(stop_words_.begin(), stop_words_.end(), IsValidWord)) {
-                throw invalid_argument("invalid characters in stop words");
+            throw invalid_argument("invalid characters in stop words");
         }
     }
 
@@ -111,7 +112,7 @@ public:
     }
 
     template <typename DocumentPredicate>
-    vector<Document> FindTopDocuments(const string& raw_query, DocumentPredicate document_predicate) const {       
+    vector<Document> FindTopDocuments(const string& raw_query, DocumentPredicate document_predicate) const {
         const Query query = ParseQuery(raw_query);
         auto matched_documents = FindAllDocuments(query, document_predicate);
         const double EPSILON = 1e-6;
@@ -119,7 +120,7 @@ public:
             [EPSILON](const Document& lhs, const Document& rhs) {
                 if (abs(lhs.relevance - rhs.relevance) < EPSILON) {
                     return lhs.rating > rhs.rating;
-                }               
+                }
                 return lhs.relevance > rhs.relevance;
             });
         if (matched_documents.size() > MAX_RESULT_DOCUMENT_COUNT) {
@@ -143,7 +144,7 @@ public:
         return static_cast<int>(documents_.size());
     }
 
-    tuple<vector<string>, DocumentStatus> MatchDocument(const string& raw_query, int document_id) const {       
+    tuple<vector<string>, DocumentStatus> MatchDocument(const string& raw_query, int document_id) const {
         const Query query = ParseQuery(raw_query);
         vector<string> matched_words;
         for (const string& word : query.plus_words) {
@@ -166,7 +167,7 @@ public:
         return tuple{ matched_words, documents_.at(document_id).status };
     }
 
-    int GetDocumentId(int index) {
+    int GetDocumentId(int index) const{
         return add_documents_.at(index);
     }
 
@@ -226,7 +227,7 @@ private:
             is_minus = true;
             text = text.substr(1);
         }
-            if (!IsValidWord(text) || text[0] == '-' || text[text.size() - 1] == '-' || text.empty()) {
+        if (!IsValidWord(text) || text[0] == '-' || text[text.size() - 1] == '-' || text.empty()) {
             throw invalid_argument("invalid query");
         }
         return { text, is_minus, IsStopWord(text) };
@@ -293,32 +294,104 @@ private:
     }
 };
 
-// ==================== для примера =========================
+template <typename It>
+class IteratorRange {
+public:
+    IteratorRange(It page_begin, It page_end, int page_size)
+        : page_begin(page_begin)
+        , page_end(page_end)
+        , page_size(page_size) {
+    }
+    It begin() const {
+        return page_begin;
+    }
+    It end() const{
+        return page_end;
+    }
+    size_t size() const {
+        return page_size;
+    }
+private:
+    It page_begin, page_end;
+    size_t page_size;
+};
 
-void PrintDocument(const Document& document) {
-    cout << "{ "s
+template <typename Iterator>
+class Paginator {
+public:
+    Paginator(Iterator page_begin, Iterator page_end, size_t page_count) {
+        if (page_count < 1) {
+            throw invalid_argument("page count is invalid");
+        }
+        size_t page_size = distance(page_begin, page_end) / page_count;
+        size_t add_to_page = distance(page_begin, page_end) % page_count;
+
+        for (auto i = 0; i < page_count; ++i) {
+            if (add_to_page > 0) {
+                pages_.push_back(IteratorRange(page_begin, (page_begin + page_size + 1), page_size + 1));
+                --add_to_page;
+                page_begin += page_size + 1;
+            }
+            else {
+                pages_.push_back(IteratorRange(page_begin, page_begin + page_size, page_size));
+                page_begin += page_size;
+            }              
+        }
+    }
+    auto begin() const {
+        return pages_.begin();
+    }
+
+    auto end() const {
+        return pages_.end();
+    }
+
+    /*size_t size() const {
+        return pages_.size();
+    }*/
+private:
+    vector<IteratorRange<Iterator>> pages_;
+};
+
+ostream& operator <<(ostream& out, const Document& document) {
+    out << "{ "s
         << "document_id = "s << document.id << ", "s
         << "relevance = "s << document.relevance << ", "s
         << "rating = "s << document.rating
-        << " }"s << endl;
+        << " }"s;
+
+    return out;
 }
+
+template <typename Iterator>
+ostream& operator<<(ostream& os, const IteratorRange<Iterator>& range) {
+    for (Iterator it = range.begin(); it != range.end(); ++it)
+    {
+        os << *it;
+    }
+
+    return os;
+}
+template <typename Container>
+auto Paginate(const Container& c, size_t page_size) {
+    return Paginator(begin(c), end(c), page_size);
+}
+
+// ==================== для примера =========================
+
 int main() {
-    SearchServer search_server("и в на"s);
-    search_server.AddDocument(0, "белый кот и модный ошейник"s, DocumentStatus::ACTUAL, { 8, -3 });
-    search_server.AddDocument(1, "пушистый кот пушистый хвост"s, DocumentStatus::ACTUAL, { 7, 2, 7 });
-    search_server.AddDocument(2, "ухоженный пёс выразительные глаза"s, DocumentStatus::ACTUAL, { 5, -12, 2, 1 });
-    search_server.AddDocument(3, "ухоженный скворец евгений"s, DocumentStatus::BANNED, { 9 });
-    cout << "ACTUAL by default:"s << endl;
-    for (const Document& document : search_server.FindTopDocuments("пушистый ухоженный кот"s)) {
-        PrintDocument(document);
+    SearchServer search_server("and with"s);
+    search_server.AddDocument(1, "funny pet and nasty rat"s, DocumentStatus::ACTUAL, { 7, 2, 7 });
+    search_server.AddDocument(2, "funny pet with curly hair"s, DocumentStatus::ACTUAL, { 1, 2, 3 });
+    search_server.AddDocument(3, "big cat nasty hair"s, DocumentStatus::ACTUAL, { 1, 2, 8 });
+    search_server.AddDocument(4, "big dog cat Vladislav"s, DocumentStatus::ACTUAL, { 1, 3, 2 });
+    search_server.AddDocument(5, "big dog hamster Borya"s, DocumentStatus::ACTUAL, { 1, 1, 1 });
+    const auto search_results = search_server.FindTopDocuments("curly dog"s);
+    int page_size = 2;
+    const auto pages = Paginate(search_results, page_size);
+    // Выводим найденные документы по страницам
+    for (auto page = pages.begin(); page != pages.end(); ++page) {
+        cout << *page << endl;
+        cout << "Page break" << endl;
     }
-    cout << "BANNED:"s << endl;
-    for (const Document& document : search_server.FindTopDocuments("пушистый ухоженный кот"s, DocumentStatus::BANNED)) {
-        PrintDocument(document);
-    }
-    cout << "Even ids:"s << endl;
-    for (const Document& document : search_server.FindTopDocuments("пушистый ухоженный кот"s, [](int document_id, DocumentStatus status, int rating) { return document_id % 2 == 0; })) {
-        PrintDocument(document);
-    }
-    return 0;
 }
