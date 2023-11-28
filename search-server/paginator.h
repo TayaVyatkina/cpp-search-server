@@ -28,7 +28,7 @@ class Paginator {
 public:
     Paginator(Iterator page_begin, Iterator page_end, size_t page_count) {
         if (page_count < 1) {
-            throw invalid_argument("page count is invalid");
+            throw std::invalid_argument("page count is invalid");
         }
         size_t page_size = distance(page_begin, page_end) / page_count;
         size_t add_to_page = distance(page_begin, page_end) % page_count;
@@ -54,15 +54,13 @@ public:
     }
 
 private:
-    vector<IteratorRange<Iterator>> pages_;
+    std::vector<IteratorRange<Iterator>> pages_;
 };
 
 template <typename Container>
 auto Paginate(const Container& c, size_t page_size) {
     return Paginator(begin(c), end(c), page_size);
 }
-
-
 
 template <typename Iterator>
 std::ostream& operator<<(std::ostream& os, const IteratorRange<Iterator>& range) {
